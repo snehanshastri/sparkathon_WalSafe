@@ -1,18 +1,22 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import SignUp from './pages/SignUp';
+import Login from './pages/Login';
+import Products from './pages/Products';
 
-const App: React.FC = () => {
+function App() {
   return (
-    <div className="p-6 text-center">
-      <h1 className="text-3xl font-bold mb-4">Welcome to WalSafe 🛡️</h1>
-      <p className="mb-4">Choose a path to explore the app:</p>
-      <div className="space-x-4">
-        <Link to="/login" className="text-blue-600 underline">Login</Link>
-        <Link to="/dashboard" className="text-green-600 underline">Dashboard</Link>
-        <Link to="/products" className="text-purple-600 underline">Products</Link>
+    <Router>
+      <div className="App">
+        <Routes>
+          <Route path="/" element={<Navigate to="/signup" replace />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/products" element={<Products />} />
+        </Routes>
       </div>
-    </div>
+    </Router>
   );
-};
+}
 
 export default App;
