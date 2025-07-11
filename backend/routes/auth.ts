@@ -32,4 +32,23 @@ router.post('/login', async (req, res) => {
   }
 });
 
+router.post('/track', async (req, res) => {
+  const { email, behaviorData, page, timestamp } = req.body;
+
+  try {
+    const db = admin.firestore();
+    await db.collection('behaviorTracking').add({
+      email,
+      behaviorData,
+      page,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
+    });
+
+    res.status(200).json({ message: 'Behavior data tracked' });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+
 export default router;

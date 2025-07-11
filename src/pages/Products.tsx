@@ -1,8 +1,10 @@
 
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { Search, Filter, Grid, List } from 'lucide-react';
 import Header from '../components/Header';
 import ProductCard from '../components/ProductCard';
+import axios from 'axios'; // 🆕 Import axios
 
 interface Product {
   id: number;
@@ -21,8 +23,57 @@ const Products: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
+  // 🆕 Behavior tracking state
+  const [mouseMoves, setMouseMoves] = useState<{ x: number; y: number; time: number }[]>([]);
+  const [clicks, setClicks] = useState<number[]>([]);
+
+  // 🆕 Capture behavior events
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMouseMoves(prev => [...prev, { x: e.clientX, y: e.clientY, time: Date.now() }]);
+    };
+    const handleClick = () => {
+      setClicks(prev => [...prev, Date.now()]);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('click', handleClick);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('click', handleClick);
+    };
+  }, []);
+
+  // 🆕 Send behavior data every 10 seconds
+  useEffect(() => {
+    const intervalId = setInterval(async () => {
+      if (mouseMoves.length === 0 && clicks.length === 0) return;
+
+      const email = localStorage.getItem('userEmail') || 'anonymous';
+
+      try {
+        await axios.post('http://localhost:5000/api/track', {
+          email,
+          behaviorData: { mouseMoves, clicks },
+          page: 'products',
+          timestamp: Date.now()
+        });
+
+        // Clear after sending
+        setMouseMoves([]);
+        setClicks([]);
+      } catch (err) {
+        console.error('Failed to send behavior data:', err);
+      }
+    }, 10000); // every 10 sec
+
+    return () => clearInterval(intervalId);
+  }, [mouseMoves, clicks]);
+
   const products: Product[] = [
-    {
+    //... (your product array remains unchanged)
+        {
       id: 1,
       name: "Samsung 65\" 4K UHD Smart TV with HDR",
       price: 497.99,
