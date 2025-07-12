@@ -21,12 +21,11 @@ router.post('/login', async (req, res) => {
 
   try {
     const db = admin.firestore();
-    await db.collection('loginBehavior').add({
-      email,
-      behaviorData,
-      timestamp: new Date()
-    });
-    res.status(200).json({ message: 'Behavior data logged' });
+    await db.collection('loginEvents').add({
+  email,
+  timestamp: admin.firestore.FieldValue.serverTimestamp()
+});
+    res.status(200).json({ message: 'stores user login with timestamp' });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

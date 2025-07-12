@@ -3,7 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import SignUp from './pages/SignUp';
 import Login from './pages/Login';
 import Products from './pages/Products';
-
+import Dashboard from './pages/Dashboard';
+import { ProtectedRoute } from './ProtectedRoute';
 function App() {
   return (
     <Router>
@@ -13,7 +14,15 @@ function App() {
           <Route path="/signup" element={<SignUp />} />
           <Route path="/login" element={<Login />} />
           <Route path="/products" element={<Products />} />
-        </Routes>
+          <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
       </div>
     </Router>
   );

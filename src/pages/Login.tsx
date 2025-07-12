@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, LogIn } from 'lucide-react';
@@ -52,18 +53,18 @@ const Login: React.FC = () => {
     };
   }, []);
 
-  // ⏱ Continuous behavior data sending
+  // ⏱ Send behavior data every 5s — only after user logs in
   useEffect(() => {
     const intervalId = setInterval(async () => {
+      const userEmail = localStorage.getItem('userEmail');
       if (
-        keyTimings.length === 0 &&
-        mouseMoves.length === 0 &&
-        clicks.length === 0
+        !userEmail ||
+        (keyTimings.length === 0 && mouseMoves.length === 0 && clicks.length === 0)
       ) return;
 
       try {
         await axios.post('http://localhost:5000/api/track', {
-          email: formData.email || 'anonymous',
+          email: userEmail,
           behaviorData: { keyTimings, mouseMoves, clicks },
           page: 'login',
           timestamp: Date.now(),
@@ -78,7 +79,7 @@ const Login: React.FC = () => {
     }, 5000);
 
     return () => clearInterval(intervalId);
-  }, [keyTimings, mouseMoves, clicks, formData.email]);
+  }, [keyTimings, mouseMoves, clicks]);
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -102,7 +103,14 @@ const Login: React.FC = () => {
         email: formData.email,
         behaviorData,
       });
+       await axios.post('http://localhost:5000/api/ml-score', {
+      email: formData.email,
+      behaviorData,
+      timestamp: Date.now(),
+      sourcePage: 'login',
+    });
 
+      localStorage.setItem('userEmail', formData.email);
       navigate('/products');
     } catch (error) {
       alert('Login failed');
