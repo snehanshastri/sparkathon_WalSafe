@@ -1,8 +1,11 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Filter, Grid, List } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import ProductCard from '../components/ProductCard';
+import axios from 'axios';
+import { auth } from '../firebase'; // Make sure this is correctly exported
+import { signOut } from 'firebase/auth';
 
 interface Product {
   id: number;
@@ -20,6 +23,73 @@ const Products: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  const [mouseMoves, setMouseMoves] = useState<{ x: number; y: number; time: number }[]>([]);
+  const [clicks, setClicks] = useState<number[]>([]);
+
+  const trackingRef = useRef<NodeJS.Timeout | null>(null);
+  const navigate = useNavigate();
+
+  // Mouse + click tracking
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMouseMoves(prev => [...prev, { x: e.clientX, y: e.clientY, time: Date.now() }]);
+    };
+    const handleClick = () => {
+      setClicks(prev => [...prev, Date.now()]);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('click', handleClick);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('click', handleClick);
+    };
+  }, []);
+
+ // Send behavior data to backend every 10s
+useEffect(() => {
+  trackingRef.current = setInterval(async () => {
+    if (mouseMoves.length === 0 && clicks.length === 0) return;
+
+    const email = localStorage.getItem('userEmail');
+    if (!email) {
+      console.warn('No email found in localStorage. Skipping behavior tracking.');
+      return;
+    }
+
+    try {
+      await axios.post('http://localhost:5000/api/track', {
+        email,
+        behaviorData: { mouseMoves, clicks },
+        page: 'products',
+        timestamp: Date.now(),
+      });
+
+      // Clear stored interactions after sending
+      setMouseMoves([]);
+      setClicks([]);
+    } catch (err) {
+      console.error('Failed to send behavior data:', err);
+    }
+  }, 10000); // every 10s
+
+  return () => {
+    if (trackingRef.current) clearInterval(trackingRef.current);
+  };
+}, [mouseMoves, clicks]);
+
+  const handleSignOut = async () => {
+    try {
+      if (trackingRef.current) clearInterval(trackingRef.current);
+      await signOut(auth);
+      localStorage.removeItem('userEmail');
+      navigate('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
 
   const products: Product[] = [
     {
@@ -120,6 +190,40 @@ const Products: React.FC = () => {
       <Header showCart={true} />
 
       <div className="products-container">
+
+        <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
+  <button
+    onClick={() => window.location.href = '/dashboard'}
+    style={{
+      padding: '8px 16px',
+      backgroundColor: '#2563eb',
+      color: 'white',
+      borderRadius: '8px',
+      border: 'none',
+      cursor: 'pointer'
+    }}
+  >
+    View Dashboard
+  </button>
+</div>
+
+        {/* ✅ Sign Out Button */}
+        <div style={{ textAlign: 'right', marginBottom: '10px' }}>
+          <button
+            onClick={handleSignOut}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: '#f44336',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
+
         <div className="hero-section">
           <h1>Great Values, Every Day</h1>
           <p>Discover amazing deals on everything you need</p>
@@ -139,7 +243,7 @@ const Products: React.FC = () => {
           <div className="filter-options">
             <div className="category-filter">
               <Filter className="icon" />
-              <select
+              <select aria-label='Selected Category'
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
               >
@@ -150,13 +254,13 @@ const Products: React.FC = () => {
             </div>
 
             <div className="view-toggle">
-              <button
+              <button aria-label='Grid View'
                 onClick={() => setViewMode('grid')}
                 className={viewMode === 'grid' ? 'active' : ''}
               >
                 <Grid />
               </button>
-              <button
+              <button aria-label='List View'
                 onClick={() => setViewMode('list')}
                 className={viewMode === 'list' ? 'active' : ''}
               >
