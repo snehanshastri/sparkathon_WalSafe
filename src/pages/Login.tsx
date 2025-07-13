@@ -103,15 +103,29 @@ const Login: React.FC = () => {
         email: formData.email,
         behaviorData,
       });
-       await axios.post('http://localhost:5000/api/ml-score', {
-      email: formData.email,
-      behaviorData,
-      timestamp: Date.now(),
-      sourcePage: 'login',
-    });
+   
 
-      localStorage.setItem('userEmail', formData.email);
-      navigate('/products');
+    const mlResponse = await axios.post('http://localhost:5000/api/ml-score', {
+  email: formData.email,
+  behaviorData,
+  timestamp: Date.now(),
+  sourcePage: 'login',
+});
+
+const { actionTaken, explanation } = mlResponse.data;
+
+if (actionTaken === 'blocked') {
+  alert(`Login blocked due to behavioral risk.\nReason: ${explanation}`);
+  return; // Don't proceed
+} else if (actionTaken === 'challenged') {
+  alert(`Suspicious behavior detected. Please verify further.`);
+  // Optional: navigate('/verify') if you implement a challenge flow
+}
+
+// Otherwise approved
+localStorage.setItem('userEmail', formData.email);
+navigate('/products');
+
     } catch (error) {
       alert('Login failed');
     }

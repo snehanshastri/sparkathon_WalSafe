@@ -83,38 +83,48 @@ router.post('/ml-score', async (req, res) => {
     const keyDelayDiff = Math.abs(features[0] - profile[0]);
     const clickRate = features[4];
 
-    if (isLogin) {
-      if (keyDelayDiff > 500) {
-        actionTaken = 'blocked';
-        explanation += ' — Typing behavior abnormal (login)';
-        adminAlert = true;
-      } else if (trustScore < 35) {
-        actionTaken = 'blocked';
-        explanation += ' — Low trust (login)';
-        adminAlert = true;
-      } else if (trustScore < 55) {
-        actionTaken = 'challenged';
-        explanation += ' — Moderate trust (login)';
-      }
-    } else if (isProduct) {
-      if (clickRate > 30) {
-        actionTaken = 'blocked';
-        explanation += ' — Excessive clicks (product)';
-        adminAlert = true;
-      } else if (trustScore < 30) {
-        actionTaken = 'blocked';
-        explanation += ' — Low trust (product)';
-        adminAlert = true;
-      } else if (trustScore < 50) {
-        actionTaken = 'challenged';
-        explanation += ' — Moderate trust (product)';
-      }
-    } else {
+if (isLogin) {
+  if (trustScore < 35) {
+    actionTaken = 'blocked';
+    explanation += ' — Low trust (login)';
+    adminAlert = true;
+  } else if (trustScore < 87) {
+    actionTaken = 'challenged';
+    explanation += ' — Moderate trust (login)';
+  }
+  else {
+    actionTaken = 'approved';
+    explanation += ' — High trust (login)';
+  }
+
+  if (keyDelayDiff > 500) {
+    explanation += ' — Typing behavior unusual';
+  }
+}
+
+    else if (isProduct) {
+  if (trustScore < 35) {
+    actionTaken = 'blocked';
+    explanation += ' — Low trust (product)';
+    adminAlert = true;
+  } else if (trustScore < 87) {
+    actionTaken = 'challenged';
+    explanation += ' — Moderate trust (product)';
+  } else {
+    actionTaken = 'approved';
+    explanation += ' — High trust (product)';
+  }
+
+  if (clickRate > 30) {
+    explanation += ' — Excessive clicks';
+  }
+}
+else {
       if (trustScore < 30) {
         actionTaken = 'blocked';
         explanation += ' — Low trust (general)';
         adminAlert = true;
-      } else if (trustScore < 50) {
+      } else if (trustScore < 87) {
         actionTaken = 'challenged';
         explanation += ' — Moderate trust (general)';
       }
