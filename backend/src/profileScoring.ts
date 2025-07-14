@@ -205,6 +205,7 @@ router.post('/verify-challenge', async (req, res) => {
           await db.collection('loginBehavior').add({
             userId: email,
             timestamp: Date.now(),
+             trustScore: 0,
             actionTaken: 'blocked',
             explanation: 'Challenge failed multiple times',
             sourcePage: page || 'login',
