@@ -154,7 +154,7 @@ router.post('/ml-score', async (req, res) => {
   return res.status(200).json({ trustScore, actionTaken, explanation, securityQuestion });
 });
 
-router.post('/verify-security', async (req, res) => {
+router.post('/verify-challenge', async (req, res) => {
   const { email, answer } = req.body;
   if (!email || !answer) return res.status(400).json({ success: false });
 
