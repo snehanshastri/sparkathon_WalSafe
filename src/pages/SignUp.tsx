@@ -1,17 +1,17 @@
-
-
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, User, Mail, Lock, Check } from 'lucide-react';
+import { Eye, EyeOff, User, Mail, Lock, Check, Shield } from 'lucide-react';
 import Header from '../components/Header';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 
 interface FormData {
   name: string;
   email: string;
   password: string;
   confirmPassword: string;
+  securityAnswer: string;
 }
 
 interface FormErrors {
@@ -19,6 +19,7 @@ interface FormErrors {
   email?: string;
   password?: string;
   confirmPassword?: string;
+  securityAnswer?: string;
 }
 
 const SignUp: React.FC = () => {
@@ -27,11 +28,14 @@ const SignUp: React.FC = () => {
     name: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    securityAnswer: ''
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const db = getFirestore();
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -55,26 +59,35 @@ const SignUp: React.FC = () => {
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
+    if (!formData.securityAnswer.trim()) {
+      newErrors.securityAnswer = 'Security answer is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!validateForm()) return;
+    if (!validateForm()) return;
 
-  try {
-    // Create user in Firebase Authentication
-    await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      const user = userCredential.user;
 
-    // On success, navigate to login page or wherever you want
-    navigate('/login');
-  } catch (error: any) {
-    // Handle errors, e.g. email already in use
-    alert(error.message || 'Failed to create account');
-  }
-};
+      // Store security answer and name in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        name: formData.name,
+        email: formData.email,
+        securityAnswer: formData.securityAnswer.trim().toLowerCase()
+      });
+
+      navigate('/login');
+    } catch (error: any) {
+      alert(error.message || 'Failed to create account');
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -156,6 +169,20 @@ const SignUp: React.FC = () => {
               </span>
             </div>
             {errors.confirmPassword && <p className="error">{errors.confirmPassword}</p>}
+
+            <label>Security Answer (e.g., Your favorite color)</label>
+            <div className="input-wrapper">
+              <Shield size={18} className="input-icon" />
+              <input
+                className="form-input"
+                type="text"
+                name="securityAnswer"
+                value={formData.securityAnswer}
+                placeholder="Your security answer"
+                onChange={handleInputChange}
+              />
+            </div>
+            {errors.securityAnswer && <p className="error">{errors.securityAnswer}</p>}
 
             <button type="submit">
               <Check size={18} style={{ marginRight: '8px' }} />
