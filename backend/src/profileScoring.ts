@@ -1,5 +1,5 @@
 import express from 'express';
-import { db } from './firebase/firebase'; // Adjust the path if needed
+import { db } from './firebase/firebase';
 
 const router = express.Router();
 
@@ -28,11 +28,11 @@ function extractFeatures(data: any): number[] {
     clicks.length > 1 ? (clicks.length - 1) / ((clicks[clicks.length - 1] - clicks[0]) / 1000) : 0;
 
   return [
-    Math.round(avgKeyDelay),
-    Math.round(keyStdDev),
-    Math.round(mouseDistAvg),
-    Math.round(mouseDistStdDev),
-    Number(clickRate.toFixed(2)),
+    Math.round(avgKeyDelay * 1.2),
+    Math.round(keyStdDev * 1.2),
+    Math.round(mouseDistAvg * 0.8),
+    Math.round(mouseDistStdDev * 0.8),
+    Number((clickRate * 1.5).toFixed(2))
   ];
 }
 
@@ -61,6 +61,7 @@ router.post('/ml-score', async (req, res) => {
   let explanation = '';
   let actionTaken: 'approved' | 'challenged' | 'blocked' = 'approved';
   let adminAlert = false;
+  let securityQuestion = null;
 
   if (!doc.exists) {
     await userRef.set({ profileVector: features });
@@ -70,21 +71,64 @@ router.post('/ml-score', async (req, res) => {
     const similarity = cosineSimilarity(features, profile);
     const distance = euclideanDistance(features, profile);
 
-    trustScore = Math.max(0, Math.round(similarity * 100 - distance));
+    const cappedDistance = Math.min(distance, 300);
+    const distancePenalty = Math.log1p(cappedDistance);
+    trustScore = Math.max(0, Math.round(similarity * 100 - distancePenalty * 1.5));
+
     explanation = `Cosine sim: ${similarity.toFixed(2)}, Euclidean dist: ${distance.toFixed(2)}`;
 
-    // Hard checks for extreme deviations
-    if (Math.abs(features[0] - profile[0]) > 300 || features[4] > 10) {
-      actionTaken = 'blocked';
-      explanation += ' — Typing or click behavior too abnormal';
-      adminAlert = true;
-    } else if (trustScore < 60) {
-      actionTaken = 'blocked';
-      adminAlert = true;
-    } else if (trustScore < 80) {
-      actionTaken = 'challenged';
+    const isLogin = (sourcePage || 'login') === 'login';
+    const isProduct = sourcePage === 'product';
+
+    const keyDelayDiff = Math.abs(features[0] - profile[0]);
+    const clickRate = features[4];
+
+    if (isLogin) {
+      if (keyDelayDiff > 500) {
+        actionTaken = 'blocked';
+        explanation += ' — Typing behavior abnormal (login)';
+        adminAlert = true;
+      } else if (trustScore < 35) {
+        actionTaken = 'blocked';
+        explanation += ' — Low trust (login)';
+        adminAlert = true;
+      } else if (trustScore < 55) {
+        actionTaken = 'challenged';
+        explanation += ' — Moderate trust (login)';
+        securityQuestion = doc.data()?.securityQuestion || null;
+      }
+    } else if (isProduct) {
+      if (clickRate > 30) {
+        actionTaken = 'blocked';
+        explanation += ' — Excessive clicks (product)';
+        adminAlert = true;
+      } else if (trustScore < 30) {
+        actionTaken = 'blocked';
+        explanation += ' — Low trust (product)';
+        adminAlert = true;
+      } else if (trustScore < 50) {
+        actionTaken = 'challenged';
+        explanation += ' — Moderate trust (product)';
+        securityQuestion = doc.data()?.securityQuestion || null;
+      }
     } else {
-      const updatedProfile = profile.map((val: number, i: number) => val * 0.9 + features[i] * 0.1);
+      if (trustScore < 30) {
+        actionTaken = 'blocked';
+        explanation += ' — Low trust (general)';
+        adminAlert = true;
+      } else if (trustScore < 50) {
+        actionTaken = 'challenged';
+        explanation += ' — Moderate trust (general)';
+        securityQuestion = doc.data()?.securityQuestion || null;
+      }
+    }
+
+    // Update profile only if trustable
+    if (actionTaken === 'approved' || actionTaken === 'challenged') {
+      const updateWeight = Math.min(0.2, Math.max(0.05, trustScore / 500));
+      const updatedProfile = profile.map((val: number, i: number) =>
+        val * (1 - updateWeight) + features[i] * updateWeight
+      );
       await userRef.update({ profileVector: updatedProfile });
     }
   }
@@ -107,7 +151,20 @@ router.post('/ml-score', async (req, res) => {
     console.warn(`[ALERT] Unusual login behavior for user ${email}`);
   }
 
-  return res.status(200).json({ trustScore, actionTaken, explanation });
+  return res.status(200).json({ trustScore, actionTaken, explanation, securityQuestion });
+});
+
+router.post('/verify-security', async (req, res) => {
+  const { email, answer } = req.body;
+  if (!email || !answer) return res.status(400).json({ success: false });
+
+  const userDoc = await db.collection('userProfiles').doc(email).get();
+  const expected = userDoc.data()?.securityAnswer;
+  if (answer.trim().toLowerCase() === expected) {
+    return res.status(200).json({ success: true });
+  } else {
+    return res.status(403).json({ success: false });
+  }
 });
 
 export default router;
