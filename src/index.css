@@ -539,4 +539,22 @@ a:hover {
   transform: scale(1.1);
 }
 
+.form-group {
+  margin-bottom: 16px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.input-wrapper input {
+  max-width: 100%;
+  width: 100%;
+}
+
+.challenge-modal .modal-content {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #fefefe;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
 

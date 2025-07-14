@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import { db } from './firebase';
 
@@ -62,6 +63,7 @@ router.post('/ml-score', async (req, res) => {
   let explanation = '';
   let actionTaken: 'approved' | 'challenged' | 'blocked' = 'approved';
   let adminAlert = false;
+  let securityQuestion = null;
 
   if (!doc.exists) {
     await userRef.set({ profileVector: features });
@@ -83,12 +85,12 @@ router.post('/ml-score', async (req, res) => {
     const keyDelayDiff = Math.abs(features[0] - profile[0]);
     const clickRate = features[4];
 
-if (isLogin) {
+    if (isLogin) {
   if (trustScore < 35) {
     actionTaken = 'blocked';
     explanation += ' — Low trust (login)';
     adminAlert = true;
-  } else if (trustScore < 87) {
+  } else if (trustScore < 90) {
     actionTaken = 'challenged';
     explanation += ' — Moderate trust (login)';
   }
@@ -97,9 +99,9 @@ if (isLogin) {
     explanation += ' — High trust (login)';
   }
 
-  if (keyDelayDiff > 500) {
-    explanation += ' — Typing behavior unusual';
-  }
+  // if (keyDelayDiff > 500) {
+  //   explanation += ' — Typing behavior unusual';
+  // }
 }
 
     else if (isProduct) {
@@ -107,7 +109,7 @@ if (isLogin) {
     actionTaken = 'blocked';
     explanation += ' — Low trust (product)';
     adminAlert = true;
-  } else if (trustScore < 87) {
+  } else if (trustScore < 90) {
     actionTaken = 'challenged';
     explanation += ' — Moderate trust (product)';
   } else {
@@ -132,7 +134,7 @@ else {
 
     // Update profile only if trustable
     if (actionTaken === 'approved' || actionTaken === 'challenged') {
-      const updateWeight = Math.min(0.2, Math.max(0.05, trustScore / 500)); // between 0.05 and 0.2
+      const updateWeight = Math.min(0.2, Math.max(0.05, trustScore / 500));
       const updatedProfile = profile.map((val: number, i: number) =>
         val * (1 - updateWeight) + features[i] * updateWeight
       );
@@ -158,7 +160,71 @@ else {
     console.warn(`[ALERT] Unusual login behavior for user ${email}`);
   }
 
-  return res.status(200).json({ trustScore, actionTaken, explanation });
+  return res.status(200).json({ trustScore, actionTaken, explanation, securityQuestion });
 });
+
+
+
+router.post('/verify-challenge', async (req, res) => {
+  const { email, answer, page } = req.body;
+
+  if (!email || !answer) {
+    return res.status(400).json({ success: false });
+  }
+
+  const usersSnapshot = await db.collection('users').where('email', '==', email).get();
+  if (usersSnapshot.empty) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const userDoc = usersSnapshot.docs[0];
+  const userRef = userDoc.ref;
+
+  try {
+    await db.runTransaction(async (t) => {
+      const freshDoc = await t.get(userRef);
+      const userData = freshDoc.data();
+
+      if (!userData || !userData.securityAnswer) {
+        throw new Error('Security answer missing.');
+      }
+
+      const expected = userData.securityAnswer.trim().toLowerCase();
+      const attempts = userData.challengeAttempts || 0;
+      const isCorrect = answer.trim().toLowerCase() === expected;
+
+      if (isCorrect) {
+        t.update(userRef, { challengeAttempts: 0 });
+        res.status(200).json({ success: true, blocked: false });
+        return;
+      } else {
+        const newAttempts = attempts + 1;
+        t.update(userRef, { challengeAttempts: newAttempts });
+
+        if (newAttempts >= 2) {
+          await db.collection('loginBehavior').add({
+            userId: email,
+            timestamp: Date.now(),
+            actionTaken: 'blocked',
+            explanation: 'Challenge failed multiple times',
+            sourcePage: page || 'login',
+            adminAlert: true,
+          });
+
+          res.status(403).json({ success: false, blocked: true });
+        } else {
+          res.status(403).json({ success: false, blocked: false });
+        }
+
+        return;
+      }
+    });
+  } catch (error) {
+    console.error('Error verifying challenge:', error);
+    return res.status(500).json({ success: false, message: 'Internal error' });
+  }
+});
+
+
 
 export default router;
