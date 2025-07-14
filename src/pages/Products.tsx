@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import ProductCard from '../components/ProductCard';
 import axios from 'axios';
-import { auth } from '../firebase'; // Make sure this is correctly exported
+import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 
 interface Product {
@@ -23,14 +23,16 @@ const Products: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-
   const [mouseMoves, setMouseMoves] = useState<{ x: number; y: number; time: number }[]>([]);
   const [clicks, setClicks] = useState<number[]>([]);
-
+  const [challengeQuestion, setChallengeQuestion] = useState('');
+  const [challengeAnswer, setChallengeAnswer] = useState('');
+  const [showChallenge, setShowChallenge] = useState(false);
+  const [challengeError, setChallengeError] = useState('');
+  const [challengeAttempts, setChallengeAttempts] = useState(0);
   const trackingRef = useRef<NodeJS.Timeout | null>(null);
   const navigate = useNavigate();
 
-  // Mouse + click tracking
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       setMouseMoves(prev => [...prev, { x: e.clientX, y: e.clientY, time: Date.now() }]);
@@ -38,47 +40,82 @@ const Products: React.FC = () => {
     const handleClick = () => {
       setClicks(prev => [...prev, Date.now()]);
     };
-
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('click', handleClick);
-
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('click', handleClick);
     };
   }, []);
 
- // Send behavior data to backend every 10s
-useEffect(() => {
-  trackingRef.current = setInterval(async () => {
-    if (mouseMoves.length === 0 && clicks.length === 0) return;
+  useEffect(() => {
+    trackingRef.current = setInterval(async () => {
+      if (mouseMoves.length === 0 && clicks.length === 0) return;
+      const email = localStorage.getItem('userEmail');
+      if (!email) return;
+      const behaviorData = { mouseMoves, clicks };
+      const timestamp = Date.now();
+      try {
+        await axios.post('http://localhost:5000/api/track', {
+          email,
+          behaviorData,
+          page: 'products',
+          timestamp,
+        });
+        const mlResponse = await axios.post('http://localhost:5000/api/ml-score', {
+          email,
+          behaviorData,
+          timestamp,
+          sourcePage: 'products',
+        });
+        const { trustScore, actionTaken, explanation, challengeQuestion: question } = mlResponse.data;
+        console.log(`[ML] Trust Score: ${trustScore}, Action: ${actionTaken}, Reason: ${explanation}`);
+        if (actionTaken === 'blocked') {
+          alert('⚠️ Suspicious behavior detected. You have been signed out for security reasons.');
+          await signOut(auth);
+          localStorage.removeItem('userEmail');
+          navigate('/login');
+        } else if (actionTaken === 'challenged') {
+          setChallengeQuestion(question);
+          setShowChallenge(true);
+        }
+        setMouseMoves([]);
+        setClicks([]);
+      } catch (err) {
+        console.error('Behavior tracking or ML evaluation failed:', err);
+      }
+    }, 10000);
+    return () => {
+      if (trackingRef.current) clearInterval(trackingRef.current);
+    };
+  }, [mouseMoves, clicks, navigate]);
 
-    const email = localStorage.getItem('userEmail');
-    if (!email) {
-      console.warn('No email found in localStorage. Skipping behavior tracking.');
-      return;
-    }
-
+  const handleChallengeSubmit = async () => {
     try {
-      await axios.post('http://localhost:5000/api/track', {
+      const email = localStorage.getItem('userEmail');
+      const res = await axios.post('http://localhost:5000/api/verify-challenge', {
         email,
-        behaviorData: { mouseMoves, clicks },
+        answer: challengeAnswer,
         page: 'products',
-        timestamp: Date.now(),
       });
-
-      // Clear stored interactions after sending
-      setMouseMoves([]);
-      setClicks([]);
-    } catch (err) {
-      console.error('Failed to send behavior data:', err);
+      if (res.data.success) {
+        setShowChallenge(false);
+        setChallengeAttempts(0);
+      } else {
+        const attempts = challengeAttempts + 1;
+        setChallengeAttempts(attempts);
+        setChallengeError('Incorrect answer.');
+        if (attempts >= 2) {
+          alert('Challenge failed multiple times. You have been signed out for security reasons.');
+          await signOut(auth);
+          localStorage.removeItem('userEmail');
+          navigate('/login');
+        }
+      }
+    } catch {
+      setChallengeError('Error verifying answer.');
     }
-  }, 10000); // every 10s
-
-  return () => {
-    if (trackingRef.current) clearInterval(trackingRef.current);
   };
-}, [mouseMoves, clicks]);
 
   const handleSignOut = async () => {
     try {
@@ -133,52 +170,9 @@ useEffect(() => {
       image: "https://images.pexels.com/photos/4226896/pexels-photo-4226896.jpeg?auto=compress&cs=tinysrgb&w=400",
       category: "Home & Kitchen"
     },
-    {
-      id: 5,
-      name: "Instant Pot Duo 7-in-1 Electric Pressure Cooker",
-      price: 79.95,
-      originalPrice: 119.99,
-      rating: 4.6,
-      reviewCount: 3421,
-      image: "https://images.pexels.com/photos/4198015/pexels-photo-4198015.jpeg?auto=compress&cs=tinysrgb&w=400",
-      badge: "Top Rated",
-      category: "Home & Kitchen"
-    },
-    {
-      id: 6,
-      name: "Levi's 501 Original Fit Jeans - Men's",
-      price: 49.99,
-      originalPrice: 69.99,
-      rating: 4.2,
-      reviewCount: 1567,
-      image: "https://images.pexels.com/photos/1598507/pexels-photo-1598507.jpeg?auto=compress&cs=tinysrgb&w=400",
-      category: "Clothing"
-    },
-    {
-      id: 7,
-      name: "HP Pavilion 15.6\" Laptop - Intel Core i5",
-      price: 449.99,
-      originalPrice: 599.99,
-      rating: 4.1,
-      reviewCount: 723,
-      image: "https://images.pexels.com/photos/205421/pexels-photo-205421.jpeg?auto=compress&cs=tinysrgb&w=400",
-      category: "Electronics"
-    },
-    {
-      id: 8,
-      name: "Ninja Foodi Personal Blender with 18oz Cup",
-      price: 39.99,
-      originalPrice: 59.99,
-      rating: 4.4,
-      reviewCount: 1891,
-      image: "https://images.pexels.com/photos/616401/pexels-photo-616401.jpeg?auto=compress&cs=tinysrgb&w=400",
-      badge: "Great Value",
-      category: "Home & Kitchen"
-    }
   ];
 
   const categories = ['All', 'Electronics', 'Clothing', 'Home & Kitchen'];
-
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
@@ -188,94 +182,40 @@ useEffect(() => {
   return (
     <div className="products-page">
       <Header showCart={true} />
-
       <div className="products-container">
-
         <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
-  <button
-    onClick={() => window.location.href = '/dashboard'}
-    style={{
-      padding: '8px 16px',
-      backgroundColor: '#2563eb',
-      color: 'white',
-      borderRadius: '8px',
-      border: 'none',
-      cursor: 'pointer'
-    }}
-  >
-    View Dashboard
-  </button>
-</div>
-
-        {/* ✅ Sign Out Button */}
-        <div style={{ textAlign: 'right', marginBottom: '10px' }}>
-          <button
-            onClick={handleSignOut}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: '#f44336',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Sign Out
-          </button>
+          <button onClick={() => window.location.href = '/dashboard'} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>View Dashboard</button>
         </div>
-
+        <div style={{ textAlign: 'right', marginBottom: '10px' }}>
+          <button onClick={handleSignOut} style={{ padding: '8px 12px', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Sign Out</button>
+        </div>
         <div className="hero-section">
           <h1>Great Values, Every Day</h1>
           <p>Discover amazing deals on everything you need</p>
         </div>
-
         <div className="filters-section">
           <div className="search-box">
             <Search className="icon" />
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+            <input type="text" placeholder="Search products..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
-
           <div className="filter-options">
             <div className="category-filter">
               <Filter className="icon" />
-              <select aria-label='Selected Category'
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-              >
+              <select aria-label='selected category' value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
                 {categories.map(category => (
                   <option key={category} value={category}>{category}</option>
                 ))}
               </select>
             </div>
-
             <div className="view-toggle">
-              <button aria-label='Grid View'
-                onClick={() => setViewMode('grid')}
-                className={viewMode === 'grid' ? 'active' : ''}
-              >
-                <Grid />
-              </button>
-              <button aria-label='List View'
-                onClick={() => setViewMode('list')}
-                className={viewMode === 'list' ? 'active' : ''}
-              >
-                <List />
-              </button>
+              <button aria-label='grid view' onClick={() => setViewMode('grid')} className={viewMode === 'grid' ? 'active' : ''}><Grid /></button>
+              <button aria-label='list view' onClick={() => setViewMode('list')} className={viewMode === 'list' ? 'active' : ''}><List /></button>
             </div>
           </div>
         </div>
 
         <div className="results-info">
-          <p>
-            Showing {filteredProducts.length} of {products.length} products
-            {selectedCategory !== 'All' && ` in ${selectedCategory}`}
-            {searchTerm && ` for "${searchTerm}"`}
-          </p>
+          <p>Showing {filteredProducts.length} of {products.length} products</p>
         </div>
 
         <div className={`product-list ${viewMode}`}>
@@ -287,17 +227,22 @@ useEffect(() => {
         {filteredProducts.length === 0 && (
           <div className="no-results">
             <p>No products found</p>
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedCategory('All');
-              }}
-            >
-              Clear filters
-            </button>
+            <button onClick={() => { setSearchTerm(''); setSelectedCategory('All'); }}>Clear filters</button>
           </div>
         )}
       </div>
+
+      {showChallenge && (
+        <div className="challenge-modal">
+          <div className="modal-content">
+            <h3>Security Challenge</h3>
+            <p>{challengeQuestion}</p>
+            <input type="text" value={challengeAnswer} onChange={(e) => setChallengeAnswer(e.target.value)} placeholder="Your answer" />
+            <button onClick={handleChallengeSubmit}>Submit</button>
+            {challengeError && <p className="error">{challengeError}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
